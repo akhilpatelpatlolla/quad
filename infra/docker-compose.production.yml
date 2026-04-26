@@ -1,0 +1,95 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: quad-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - api-1
+      - api-2
+      - web
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  web:
+    image: node:20-alpine
+    container_name: quad-web
+    working_dir: /app
+    command: sh -c "npm ci && npm run build -w apps/web && npm run preview -w apps/web -- --host 0.0.0.0 --port 4173"
+    volumes:
+      - ../:/app
+    expose:
+      - "4173"
+
+  api-1:
+    image: node:20-alpine
+    container_name: quad-api-1
+    working_dir: /app
+    command: sh -c "npm ci && npm run prisma:generate -w apps/api && npm run dev -w apps/api"
+    environment:
+      DATABASE_URL: postgresql://quad:quadpass@postgres:5432/quad?schema=public
+      JWT_SECRET: ${JWT_SECRET:-quad-prod-secret}
+      CLIENT_URL: http://localhost
+      PORT: 4000
+    volumes:
+      - ../:/app
+    depends_on:
+      - postgres
+      - redis
+    expose:
+      - "4000"
+
+  api-2:
+    image: node:20-alpine
+    container_name: quad-api-2
+    working_dir: /app
+    command: sh -c "npm ci && npm run prisma:generate -w apps/api && npm run dev -w apps/api"
+    environment:
+      DATABASE_URL: postgresql://quad:quadpass@postgres:5432/quad?schema=public
+      JWT_SECRET: ${JWT_SECRET:-quad-prod-secret}
+      CLIENT_URL: http://localhost
+      PORT: 4000
+    volumes:
+      - ../:/app
+    depends_on:
+      - postgres
+      - redis
+    expose:
+      - "4000"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: quad-postgres
+    environment:
+      POSTGRES_USER: quad
+      POSTGRES_PASSWORD: quadpass
+      POSTGRES_DB: quad
+    volumes:
+      - quad_pg_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: quad-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - quad_redis_data:/data
+    expose:
+      - "6379"
+
+  mongo:
+    image: mongo:7
+    container_name: quad-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: quad
+      MONGO_INITDB_ROOT_PASSWORD: quadpass
+    volumes:
+      - quad_mongo_data:/data/db
+    expose:
+      - "27017"
+
+volumes:
+  quad_pg_data:
+  quad_redis_data:
+  quad_mongo_data:

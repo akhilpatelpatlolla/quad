@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+  BRAND
+  RECRUITER
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum Visibility {
+  PUBLIC
+  COLLEGE
+  BATCH
+}
+
+enum ItemCategory {
+  TEXTBOOK
+  EQUIPMENT
+  HOSTEL
+  CYCLE
+  ACCOMMODATION
+  LOST_FOUND
+  OTHER
+}
+
+enum GroupJoinStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  name               String
+  email              String             @unique
+  passwordHash       String
+  role               Role               @default(STUDENT)
+  verificationStatus VerificationStatus @default(PENDING)
+  collegeId          String?
+  departmentId       String?
+  batchId            String?
+  createdAt          DateTime           @default(now())
+  reputationScore    Int                @default(120)
+  streakDays         Int                @default(1)
+  lastActiveAt       DateTime?
+
+  college           College?            @relation(fields: [collegeId], references: [id])
+  department        Department?         @relation(fields: [departmentId], references: [id])
+  batch             Batch?              @relation(fields: [batchId], references: [id])
+  posts             Post[]
+  marketItems       MarketplaceItem[]
+  opportunities     Opportunity[]
+  deals             Deal[]
+  resources         Resource[]
+  events            Event[]
+  messages          BatchMessage[]
+  ownedGroups       CampusGroup[]       @relation("GroupOwner")
+  pocGroups         CampusGroup[]       @relation("GroupPoc")
+  groupMemberships  CampusGroupMember[]
+  groupRequests     CampusGroupJoinRequest[] @relation("GroupRequester")
+  reviewedRequests  CampusGroupJoinRequest[] @relation("GroupReviewer")
+  memberships       StudyRoomMember[]
+  studyRoomsCreated StudyRoom[]         @relation("StudyRoomCreator")
+  mentorshipSessions MentorSession[]    @relation("MentorRequester")
+  notifications      Notification[]     @relation("NotificationOwner")
+  notificationReads  Notification[]     @relation("NotificationReader")
+}
+
+model College {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  city        String?
+  departments Department[]
+  batches     Batch[]
+  clubs       Club[]
+  groups      CampusGroup[]
+  users       User[]
+  posts       Post[]
+  resources   Resource[]
+  events      Event[]
+  mentorSessions MentorSession[]
+}
+
+model Department {
+  id         String  @id @default(cuid())
+  name       String
+  collegeId  String
+  college    College @relation(fields: [collegeId], references: [id])
+  users      User[]
+  batches    Batch[]
+  groups     CampusGroup[]
+
+  @@unique([name, collegeId])
+}
+
+model Batch {
+  id            String         @id @default(cuid())
+  name          String
+  startYear     Int
+  endYear       Int
+  collegeId     String
+  departmentId  String
+  college       College        @relation(fields: [collegeId], references: [id])
+  department    Department     @relation(fields: [departmentId], references: [id])
+  users         User[]
+  messages      BatchMessage[]
+
+  @@unique([name, departmentId, collegeId])
+}
+
+model Club {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  collegeId   String
+  college     College   @relation(fields: [collegeId], references: [id])
+
+  @@unique([name, collegeId])
+}
+
+model Post {
+  id          String     @id @default(cuid())
+  content     String
+  visibility  Visibility @default(COLLEGE)
+  authorId    String
+  collegeId   String?
+  createdAt   DateTime   @default(now())
+
+  author      User       @relation(fields: [authorId], references: [id])
+  college     College?   @relation(fields: [collegeId], references: [id])
+}
+
+model BatchMessage {
+  id         String   @id @default(cuid())
+  message    String
+  batchId    String
+  authorId   String
+  createdAt  DateTime @default(now())
+
+  batch      Batch    @relation(fields: [batchId], references: [id])
+  author     User     @relation(fields: [authorId], references: [id])
+}
+
+model MarketplaceItem {
+  id          String       @id @default(cuid())
+  title       String
+  description String
+  price       Float
+  category    ItemCategory @default(OTHER)
+  location    String?
+  isActive    Boolean      @default(true)
+  sellerId    String
+  createdAt   DateTime     @default(now())
+
+  seller      User         @relation(fields: [sellerId], references: [id])
+}
+
+model Opportunity {
+  id          String   @id @default(cuid())
+  title       String
+  company     String
+  description String
+  location    String?
+  branch      String?
+  year        Int?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  createdBy   User     @relation(fields: [createdById], references: [id])
+}
+
+model Deal {
+  id          String   @id @default(cuid())
+  brand       String
+  title       String
+  code        String
+  description String
+  expiresAt   DateTime?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  createdBy   User     @relation(fields: [createdById], references: [id])
+}
+
+model Resource {
+  id           String   @id @default(cuid())
+  title        String
+  url          String
+  subject      String
+  collegeId    String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  college      College? @relation(fields: [collegeId], references: [id])
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  venue       String?
+  eventDate   DateTime
+  collegeId   String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  college     College? @relation(fields: [collegeId], references: [id])
+  createdBy   User     @relation(fields: [createdById], references: [id])
+}
+
+model StudyRoom {
+  id           String            @id @default(cuid())
+  name         String
+  topic        String
+  createdById  String
+  createdAt    DateTime          @default(now())
+
+  createdBy    User              @relation("StudyRoomCreator", fields: [createdById], references: [id])
+  members      StudyRoomMember[]
+}
+
+model StudyRoomMember {
+  id           String    @id @default(cuid())
+  studyRoomId  String
+  userId       String
+  joinedAt     DateTime  @default(now())
+
+  studyRoom    StudyRoom  @relation(fields: [studyRoomId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@unique([studyRoomId, userId])
+}
+
+model CampusGroup {
+  id           String                 @id @default(cuid())
+  name         String
+  description  String
+  collegeId    String
+  departmentId String?
+  ownerId      String
+  pocId        String?
+  createdAt    DateTime               @default(now())
+
+  college      College                @relation(fields: [collegeId], references: [id])
+  department   Department?            @relation(fields: [departmentId], references: [id])
+  owner        User                   @relation("GroupOwner", fields: [ownerId], references: [id])
+  poc          User?                  @relation("GroupPoc", fields: [pocId], references: [id])
+  members      CampusGroupMember[]
+  requests     CampusGroupJoinRequest[]
+
+  @@unique([name, collegeId])
+}
+
+model CampusGroupMember {
+  id        String      @id @default(cuid())
+  groupId   String
+  userId    String
+  joinedAt  DateTime    @default(now())
+
+  group     CampusGroup @relation(fields: [groupId], references: [id])
+  user      User        @relation(fields: [userId], references: [id])
+
+  @@unique([groupId, userId])
+}
+
+model CampusGroupJoinRequest {
+  id           String          @id @default(cuid())
+  groupId       String
+  requesterId   String
+  message       String?
+  status        GroupJoinStatus @default(PENDING)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime        @default(now())
+
+  group         CampusGroup     @relation(fields: [groupId], references: [id])
+  requester     User            @relation("GroupRequester", fields: [requesterId], references: [id])
+  reviewedBy    User?           @relation("GroupReviewer", fields: [reviewedById], references: [id])
+
+  @@unique([groupId, requesterId])
+}
+
+model MentorSession {
+  id          String   @id @default(cuid())
+  topic       String
+  mentor      String
+  mode        String
+  slot        DateTime
+  note        String
+  collegeId   String?
+  requesterId String
+  createdAt   DateTime @default(now())
+
+  college     College? @relation(fields: [collegeId], references: [id])
+  requester   User     @relation("MentorRequester", fields: [requesterId], references: [id])
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  title      String
+  body       String
+  read       Boolean   @default(false)
+  readById   String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation("NotificationOwner", fields: [userId], references: [id])
+  readBy     User?     @relation("NotificationReader", fields: [readById], references: [id])
+}
