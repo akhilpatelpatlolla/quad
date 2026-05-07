@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import AdSlot from "../components/AdSlot";
+import CreditsPurchaseModal from "../components/CreditsPurchaseModal";
 import {
   Bell,
   BellRing,
@@ -18,7 +19,8 @@ import {
   Store,
   Trophy,
   Users,
-  UserRoundCheck
+  UserRoundCheck,
+  Wallet
 } from "lucide-react";
 import dayjs from "dayjs";
 import { io, Socket } from "socket.io-client";
@@ -103,6 +105,7 @@ type User = {
   college?: { name: string } | null;
   department?: { name: string } | null;
   batch?: { name: string } | null;
+  creditBalance?: number;
 };
 
 const tabConfig: Array<{ tab: Tab; icon: ReactNode }> = [
@@ -184,6 +187,7 @@ function DashboardPage() {
     }
     return [];
   });
+  const [creditsModalOpen, setCreditsModalOpen] = useState(false);
   const [favoriteTabs, setFavoriteTabs] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem("quad_favorite_tabs");
@@ -736,6 +740,23 @@ function DashboardPage() {
               <span>Unread</span>
               <strong>{notifications.filter((item) => !item.read).length}</strong>
             </div>
+            <div className="dash-metric-inline-group">
+              <div className="dash-metric inline">
+                <Wallet size={16} />
+                <span>Credits</span>
+                <strong>{typeof user?.creditBalance === "number" ? user.creditBalance : 0}</strong>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary credits-buy-pill"
+                onClick={() => {
+                  hapticTap();
+                  setCreditsModalOpen(true);
+                }}
+              >
+                Buy
+              </button>
+            </div>
           </div>
         </div>
 
@@ -953,6 +974,22 @@ function DashboardPage() {
         </aside>
         </div>
       </div>
+
+      {token && user ? (
+        <CreditsPurchaseModal
+          open={creditsModalOpen}
+          onClose={() => setCreditsModalOpen(false)}
+          token={token}
+          userEmail={user.email}
+          userName={user.name}
+          balanceHint={typeof user.creditBalance === "number" ? user.creditBalance : 0}
+          onCreditsUpdated={(creditBalance) => {
+            setUser((current) => (current ? { ...current, creditBalance } : current));
+            setNotice("Payment verified — credits were added to your account.");
+            hapticSuccess();
+          }}
+        />
+      ) : null}
 
     </main>
   );

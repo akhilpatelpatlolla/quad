@@ -42,6 +42,11 @@ enum GroupJoinStatus {
   REJECTED
 }
 
+enum CreditOrderStatus {
+  PENDING
+  PAID
+}
+
 model User {
   id                 String             @id @default(cuid())
   name               String
@@ -56,6 +61,7 @@ model User {
   reputationScore    Int                @default(120)
   streakDays         Int                @default(1)
   lastActiveAt       DateTime?
+  creditBalance      Int                @default(0)
 
   college           College?            @relation(fields: [collegeId], references: [id])
   department        Department?         @relation(fields: [departmentId], references: [id])
@@ -77,6 +83,23 @@ model User {
   mentorshipSessions MentorSession[]    @relation("MentorRequester")
   notifications      Notification[]     @relation("NotificationOwner")
   notificationReads  Notification[]     @relation("NotificationReader")
+  creditOrders       CreditOrder[]
+}
+
+model CreditOrder {
+  id                 String             @id @default(cuid())
+  userId             String
+  razorpayOrderId    String             @unique
+  credits            Int
+  amountPaise        Int
+  currency           String             @default("INR")
+  status             CreditOrderStatus  @default(PENDING)
+  razorpayPaymentId  String?            @unique
+  createdAt          DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
 }
 
 model College {

@@ -989,6 +989,160 @@ html:has(.owner-app-shell) {
   height: 100%;
 }
 
+/* ----- Credits checkout (opaque layer + solid panel — no frosted/translucent glass) ----- */
+.credits-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: var(--quad-credits-overlay, #090a10);
+  backdrop-filter: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+:root[data-theme="light"] .credits-modal-overlay {
+  --quad-credits-overlay: #e4e6ec;
+}
+
+.credits-modal-panel {
+  width: min(440px, 100%);
+  max-height: min(90vh, 640px);
+  overflow-y: auto;
+  border-radius: var(--quad-radius-xl, 14px);
+  border: 1px solid var(--line);
+  background: var(--quad-credits-panel, #15121d);
+  color: var(--ink);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="light"] .credits-modal-panel {
+  --quad-credits-panel: #ffffff;
+  box-shadow: 0 20px 50px rgba(15, 20, 30, 0.18);
+}
+
+.credits-modal-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.35rem 1.35rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.credits-modal-tag {
+  margin: 0 0 0.35rem;
+}
+
+.credits-modal-panel h2 {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.credits-modal-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.credits-modal-balance {
+  margin: 0.25rem 0 0;
+  font-size: 0.92rem;
+}
+
+.credits-modal-balance strong {
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.credits-modal-close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--quad-credits-close, #282435);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    transform 0.14s ease,
+    background 0.2s;
+}
+
+:root[data-theme="light"] .credits-modal-close {
+  --quad-credits-close: #dfe3ea;
+}
+
+.credits-modal-close:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--primary) 28%, var(--quad-credits-close, #282435));
+}
+
+.credits-modal-close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.credits-modal-banner {
+  margin: 0;
+  padding: 0.75rem 1.35rem;
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card-strong) 100%, transparent);
+}
+
+.credits-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 0.65rem;
+  padding: 1.1rem 1.35rem 1.35rem;
+}
+
+.credits-pack-card {
+  padding: 0.95rem 0.65rem;
+  border-radius: var(--quad-radius-lg, 12px);
+  border: 1px solid var(--line);
+  background: var(--quad-credits-pack, #1c1728);
+  text-align: center;
+}
+
+:root[data-theme="light"] .credits-pack-card {
+  --quad-credits-pack: #f5f6f9;
+}
+
+.credits-pack-credits {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-display);
+  line-height: 1;
+  color: var(--primary);
+}
+
+.credits-pack-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.credits-pack-price {
+  margin: 0 0 0.85rem;
+  font-weight: 700;
+}
+
+.credits-pack-buy.btn {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.86rem;
+}
+
 .dashboard-page {
   width: 100%;
   max-width: 1440px;
@@ -1104,6 +1258,19 @@ html:has(.owner-app-shell) {
 .dash-metric.inline strong {
   color: var(--ink);
   font-size: 0.95rem;
+}
+
+.dash-metric-inline-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.credits-buy-pill.btn {
+  padding: 0.4rem 0.95rem;
+  font-size: 0.82rem;
+  border-radius: 999px;
 }
 
 .dash-workspace {

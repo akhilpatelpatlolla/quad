@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
@@ -9,7 +10,15 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { PrismaClient, Role, VerificationStatus, Visibility, ItemCategory, GroupJoinStatus } from "@prisma/client";
+import {
+  PrismaClient,
+  Role,
+  VerificationStatus,
+  Visibility,
+  ItemCategory,
+  GroupJoinStatus,
+  CreditOrderStatus
+} from "@prisma/client";
 import { z } from "zod";
 
 dotenv.config();
@@ -20,7 +29,9 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   CLIENT_URL: z.string().url().default("http://localhost:5173"),
   ALLOWED_ORIGINS: z.string().optional(),
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development")
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional()
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -44,6 +55,45 @@ const ALLOWED_ORIGINS = new Set([
   "http://localhost:5174",
   ...(env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(",").map((item) => item.trim()).filter(Boolean) : [])
 ]);
+
+const RAZORPAY_KEY_ID = env.RAZORPAY_KEY_ID?.trim() ?? "";
+const RAZORPAY_KEY_SECRET = env.RAZORPAY_KEY_SECRET?.trim() ?? "";
+
+function razorpayConfigured() {
+  return RAZORPAY_KEY_ID.length > 0 && RAZORPAY_KEY_SECRET.length > 10;
+}
+
+const CREDIT_PACKS = [
+  { packId: "starter" as const, credits: 500, amountPaise: 4900 },
+  { packId: "boost" as const, credits: 1200, amountPaise: 9900 },
+  { packId: "pro" as const, credits: 2800, amountPaise: 19900 }
+];
+
+async function razorpayCreateOrder(amountPaise: number, receipt: string, notes: Record<string, string>) {
+  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64");
+  const res = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      amount: amountPaise,
+      currency: "INR",
+      receipt,
+      notes
+    })
+  });
+  const data = (await res.json()) as { id?: string; amount?: number; currency?: string; error?: { description?: string } };
+  if (!res.ok) {
+    throw new Error(data.error?.description ?? "Razorpay order creation failed");
+  }
+  if (!data.id) {
+    throw new Error("Razorpay returned no order id");
+  }
+  return { id: data.id, amount: data.amount ?? amountPaise, currency: data.currency ?? "INR" };
+}
+
 const limiter = new RateLimiterMemory({ points: 180, duration: 60 });
 
 app.set("trust proxy", 1);
@@ -146,6 +196,16 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
+});
+
+const creditOrderPackSchema = z.object({
+  packId: z.enum(["starter", "boost", "pro"])
+});
+
+const verifyCreditPaymentSchema = z.object({
+  razorpay_order_id: z.string().min(8),
+  razorpay_payment_id: z.string().min(8),
+  razorpay_signature: z.string().min(8)
 });
 
 function listQuery(req: express.Request) {
@@ -318,6 +378,180 @@ app.get("/api/me", authRequired, async (req: AuthedRequest, res) => {
   });
 
   return res.json(user);
+});
+
+app.get("/api/payments/credits/catalog", authRequired, (_req: AuthedRequest, res) => {
+  const packs = CREDIT_PACKS.map((pack) => ({
+    packId: pack.packId,
+    credits: pack.credits,
+    amountPaise: pack.amountPaise,
+    label: `₹${(pack.amountPaise / 100).toLocaleString("en-IN")}`
+  }));
+  const configured = razorpayConfigured();
+  return res.json({
+    configured,
+    keyId: configured ? RAZORPAY_KEY_ID : null,
+    packs
+  });
+});
+
+app.post("/api/payments/credits/order", authRequired, async (req: AuthedRequest, res) => {
+  if (!razorpayConfigured()) {
+    return res.status(503).json({ error: "Razorpay is not configured on this server." });
+  }
+  const parsed = creditOrderPackSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Pick a credit pack." });
+  }
+  const pack = CREDIT_PACKS.find((candidate) => candidate.packId === parsed.data.packId);
+  if (!pack) {
+    return res.status(400).json({ error: "Unknown pack." });
+  }
+  const userId = req.user!.id;
+  const receiptRaw = `quad_${userId.slice(0, 8)}_${Date.now()}`.slice(0, 40);
+
+  let remote;
+  try {
+    remote = await razorpayCreateOrder(pack.amountPaise, receiptRaw, {
+      userId,
+      credits: String(pack.credits),
+      packId: pack.packId
+    });
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message });
+  }
+
+  await prisma.creditOrder.create({
+    data: {
+      userId,
+      razorpayOrderId: remote.id,
+      credits: pack.credits,
+      amountPaise: pack.amountPaise,
+      currency: remote.currency,
+      status: CreditOrderStatus.PENDING
+    }
+  });
+
+  return res.status(201).json({
+    orderId: remote.id,
+    amount: remote.amount,
+    currency: remote.currency,
+    credits: pack.credits,
+    keyId: RAZORPAY_KEY_ID
+  });
+});
+
+app.post("/api/payments/credits/verify", authRequired, async (req: AuthedRequest, res) => {
+  if (!razorpayConfigured()) {
+    return res.status(503).json({ error: "Razorpay is not configured on this server." });
+  }
+  const parsed = verifyCreditPaymentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid Razorpay response payload." });
+  }
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = parsed.data;
+  const bodySignature = crypto
+    .createHmac("sha256", RAZORPAY_KEY_SECRET)
+    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+    .digest("hex");
+
+  if (bodySignature !== razorpay_signature) {
+    return res.status(400).json({ error: "Payment signature mismatch." });
+  }
+
+  const authUserId = req.user!.id;
+  let order = await prisma.creditOrder.findFirst({
+    where: {
+      razorpayOrderId: razorpay_order_id,
+      userId: authUserId,
+      status: CreditOrderStatus.PENDING
+    }
+  });
+
+  if (!order) {
+    const already = await prisma.creditOrder.findFirst({
+      where: {
+        razorpayOrderId: razorpay_order_id,
+        userId: authUserId,
+        status: CreditOrderStatus.PAID,
+        razorpayPaymentId: razorpay_payment_id
+      },
+      select: { id: true }
+    });
+    const userDup = await prisma.user.findUnique({
+      where: { id: authUserId },
+      select: { creditBalance: true }
+    });
+    if (already) {
+      return res.json({ creditBalance: userDup?.creditBalance ?? 0, duplicate: true });
+    }
+    return res.status(400).json({ error: "Order not found or payment already finalized." });
+  }
+
+  const payAuth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64");
+  const payRes = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(razorpay_payment_id)}`, {
+    headers: {
+      Authorization: `Basic ${payAuth}`
+    }
+  });
+  const paymentJson = (await payRes.json()) as { status?: string; order_id?: string; error?: { description?: string } };
+  if (!payRes.ok) {
+    return res.status(400).json({
+      error: typeof paymentJson.error === "object" && paymentJson.error && "description" in paymentJson.error
+        ? String((paymentJson.error as { description: string }).description)
+        : "Could not fetch payment status from Razorpay."
+    });
+  }
+
+  const payOrderId = typeof paymentJson.order_id === "string" ? paymentJson.order_id : "";
+  if (!payOrderId || payOrderId !== razorpay_order_id) {
+    return res.status(400).json({ error: "Payment does not match this order." });
+  }
+
+  if (paymentJson.status !== "captured" && paymentJson.status !== "authorized") {
+    return res.status(400).json({ error: `Payment not successful (status: ${paymentJson.status ?? "unknown"})` });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const transitioned = await tx.creditOrder.updateMany({
+      where: { id: order!.id, status: CreditOrderStatus.PENDING },
+      data: {
+        status: CreditOrderStatus.PAID,
+        razorpayPaymentId: razorpay_payment_id
+      }
+    });
+    if (transitioned.count === 0) {
+      return;
+    }
+    await tx.user.update({
+      where: { id: order!.userId },
+      data: {
+        creditBalance: { increment: order!.credits }
+      }
+    });
+    await tx.notification.create({
+      data: {
+        userId: order!.userId,
+        title: "Credits added",
+        body: `${order!.credits} QUAD credits were added to your account.`
+      }
+    });
+  });
+
+  order = await prisma.creditOrder.findFirst({
+    where: { razorpayOrderId: razorpay_order_id, userId: authUserId, status: CreditOrderStatus.PAID }
+  });
+
+  const fresh = await prisma.user.findUnique({
+    where: { id: authUserId },
+    select: { creditBalance: true }
+  });
+
+  const credited = Boolean(order?.status === CreditOrderStatus.PAID);
+  return res.json({
+    creditBalance: fresh?.creditBalance ?? 0,
+    creditsAdded: credited ? order?.credits ?? 0 : 0
+  });
 });
 
 app.get("/api/engagement/me", authRequired, async (req: AuthedRequest, res) => {
